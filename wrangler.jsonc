@@ -1,5 +1,7 @@
 {
   "name": "svgist",
   "main": "worker.js",
-  "compatibility_date": "2026-10-31"
+  "compatibility_date": "2026-10-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true
 }

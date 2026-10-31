@@ -53,13 +53,18 @@ async function err(status, msg, theme) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const [id, file] = url.pathname.split('/').filter(Boolean);
     const grid = url.searchParams.get('grid') === '1'; // ?grid=1 pins each char to the grid; default is one <text> per line
     const theme = url.searchParams.get('theme') ?? 'auto'; // ?theme={auto,dark,light}
     if (!id) return err(400, 'syntax: /GIST_ID[/FILENAME]?grid=1&theme={auto,dark,light}', theme);
-    const res = await fetch(API + id);
+    // cache (helps GH API ratelimit)
+    const cache = typeof caches !== 'undefined' ? await caches.open('gist') : null;
+    const hit = cache && (await cache.match(API + id));
+    // optional token raises hourly ratelimit 60 -> 5k
+    const res = hit ?? await fetch(API + id, env?.GH_TOKEN ? { headers: { authorization: `Bearer ${env.GH_TOKEN}` } } : {});
+    if (cache && !hit && res.ok) cache.put(API + id, res.clone());
     if (!res.ok) return err(res.status, `gist API error: ${res.status}`, theme);
     const gist = await res.json();
     const key = file && gist.files[file] ? file : Object.keys(gist.files)[0];
@@ -70,8 +75,8 @@ export default {
     return new Response(svg(content, grid, theme), {
       headers: {
         'content-type': 'image/svg+xml',
-        // always fresh; use 'max-age=300' instead if the anonymous 60 req/h GitHub API limit is hit
-        'cache-control': 'no-store',
+        // tell consumer about caches (5 min): https://developers.cloudflare.com/cache/concepts/retention-vs-freshness/
+        'cache-control': 's-maxage=300',
       },
     });
   },
