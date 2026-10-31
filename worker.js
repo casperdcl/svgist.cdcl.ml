@@ -63,15 +63,20 @@ export default {
     const cache = typeof caches !== 'undefined' ? await caches.open('gist') : null;
     const hit = cache && (await cache.match(API + id));
     // optional token raises hourly ratelimit 60 -> 5k
-    const res = hit ?? await fetch(API + id, env?.GH_TOKEN ? { headers: { authorization: `Bearer ${env.GH_TOKEN}` } } : {});
+    const headers = { 'user-agent': 'gist-svg' };
+    if (env?.GH_TOKEN) headers.authorization = `Bearer ${env.GH_TOKEN}`;
+    const res = hit ?? await fetch(API + id, { headers });
     if (cache && !hit && res.ok) cache.put(API + id, res.clone());
-    if (!res.ok) return err(res.status, `gist API error: ${res.status}`, theme);
+    if (!res.ok) {
+      const msg = await res.text().catch(() => '');
+      return err(res.status, `gist API error: ${res.status} ${msg}`, theme);
+    }
     const gist = await res.json();
     const key = file && gist.files[file] ? file : Object.keys(gist.files)[0];
     if (!key) return err(404, 'gist has no files', theme);
     const f = gist.files[key];
     // binary/large -> null content; raw_url always works
-    const content = f.content ?? (await (await fetch(f.raw_url)).text());
+    const content = f.content ?? (await (await fetch(f.raw_url, { headers })).text());
     return new Response(svg(content, grid, theme), {
       headers: {
         'content-type': 'image/svg+xml',
